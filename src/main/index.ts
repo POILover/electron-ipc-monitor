@@ -2,7 +2,7 @@ import { app, BrowserWindow, ipcMain } from 'electron'
 import { electronApp, optimizer } from '@electron-toolkit/utils'
 import { createWindow } from './window/main-window'
 import { ipcMonitorHandle } from './window/monitor'
-import { randomPromise } from './utils/randomPromiseGenerator'
+import { randomPromise } from './utils/random-promise'
 ipcMain.handle = ipcMonitorHandle
 // register customized protocols, it must be called before creating the window
 

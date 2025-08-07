@@ -1,46 +1,101 @@
 <template>
   <div class="monitor-container">
-    <div class="header">
-      <h1 class="title">监控面板</h1>
-      <div class="stats">
-        <span class="stat-item">总请求数: {{ monitorLogs.length }}</span>
+    <div class="main-content" :class="{ 'panel-open': isPanelOpen }">
+      <div class="table-container">
+        <table class="monitor-table">
+          <thead>
+            <tr>
+              <th>通道</th>
+              <th>状态</th>
+              <th>耗时(ms)</th>
+              <th>大小</th>
+              <th>开始时间</th>
+            </tr>
+          </thead>
+          <tbody ref="tbodyRef">
+            <tr v-for="(log, index) in monitorLogs" :key="index" :class="getRowClass(log)">
+              <td class="channel-cell clickable" @click="openPanel(log)">{{ log.channel }}</td>
+              <td class="status-cell">
+                <span :class="getStatusClass(log.status)">{{ getStatusText(log.status) }}</span>
+              </td>
+              <td class="timestamp-cell">{{ formatTimestamp(log) }}</td>
+              <td class="size-cell">{{ formatSize(log.result) }}</td>
+              <td class="time-cell">{{ formatTime(log.startTime) }}</td>
+            </tr>
+          </tbody>
+        </table>
       </div>
-    </div>
-    
-    <div class="table-container">
-      <table class="monitor-table">
-        <thead>
-          <tr>
-            <th>UUID</th>
-            <th>通道</th>
-            <th>状态</th>
-            <th>参数</th>
-            <th>耗时(ms)</th>
-            <th>结果</th>
-            <th>开始时间</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr v-for="(log, index) in monitorLogs" :key="index" :class="getRowClass(log)">
-            <td class="uuid-cell">{{ formatUuid(log.id) }}</td>
-            <td class="channel-cell">{{ log.channel }}</td>
-            <td class="status-cell">
-              <span :class="getStatusClass(log.status)">{{ getStatusText(log.status) }}</span>
-            </td>
-            <td class="args-cell" :title="JSON.stringify(log.args)">{{ formatArgs(log.args) }}</td>
-            <td class="timestamp-cell">{{ formatTimestamp(log) }}</td>
-            <td class="result-cell" :title="JSON.stringify(log.result)">{{ formatResult(log.result) }}</td>
-            <td class="time-cell">{{ formatTime(log.startTime) }}</td>
-          </tr>
-        </tbody>
-      </table>
+
+      <!-- 右侧面板 -->
+      <div class="details-panel" v-if="isPanelOpen">
+        <div class="panel-header">
+          <div class="close-btn" @click="closePanel">×</div>
+          <h3>{{ selectedLog?.channel }}</h3>
+        </div>
+        <div class="panel-tabs">
+          <button 
+            class="tab-btn" 
+            :class="{ active: activeTab === 'payload' }"
+            @click="activeTab = 'payload'"
+          >
+            Payload
+          </button>
+          <button 
+            class="tab-btn" 
+            :class="{ active: activeTab === 'response' }"
+            @click="activeTab = 'response'"
+          >
+            Response
+          </button>
+        </div>
+        <div class="panel-content">
+          <div v-if="activeTab === 'payload'" class="tab-content">
+            <vue-json-pretty 
+              :data="selectedLog?.args" 
+              :showLength="true"
+              :showLine="true"
+              :showDoubleQuotes="true"
+              :showIcon="true"
+              :deep="4"
+            />
+          </div>
+          <div v-if="activeTab === 'response'" class="tab-content">
+            <vue-json-pretty 
+              :data="selectedLog?.result" 
+              :showLength="true"
+              :showLine="true"
+              :showDoubleQuotes="true"
+              :showIcon="true"
+              :deep="4"
+            />
+          </div>
+        </div>
+      </div>
     </div>
   </div>
 </template>
 <script lang="ts" setup>
-import { onMounted, ref } from 'vue';
+import { nextTick, onMounted, ref } from 'vue';
+import VueJsonPretty from 'vue-json-pretty';
+import 'vue-json-pretty/lib/styles.css';
 
 const monitorLogs = ref<any[]>([]);
+const isPanelOpen = ref(false);
+const selectedLog = ref<any>(null);
+const activeTab = ref<'payload' | 'response'>('payload');
+
+// 打开面板
+const openPanel = (log: any) => {
+  selectedLog.value = log;
+  isPanelOpen.value = true;
+  // 保持当前的 tab 选择，不重置为 payload
+};
+
+// 关闭面板
+const closePanel = () => {
+  isPanelOpen.value = false;
+  selectedLog.value = null;
+};
 
 // 格式化函数
 const formatUuid = (uuid: string) => {
@@ -57,6 +112,28 @@ const formatResult = (result: any) => {
   if (!result) return '-';
   const str = JSON.stringify(result);
   return str.length > 50 ? str.substring(0, 50) + '...' : str;
+};
+
+const formatSize = (result: any) => {
+  if (!result) return '0 B';
+  const str = JSON.stringify(result);
+  const bytes = new Blob([str]).size;
+  
+  if (bytes === 0) return '0 B';
+  
+  const k = 1024;
+  const sizes = ['B', 'KB', 'MB', 'GB'];
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  
+  return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
+};
+const tbodyRef = ref<HTMLTableSectionElement | null>(null);
+const scrollToBottom = () => {
+  nextTick(() => {
+    if (tbodyRef.value) {
+      tbodyRef.value.scrollTop = tbodyRef.value.scrollHeight;
+    }
+  });
 };
 
 const formatTime = (timestamp: number) => {
@@ -81,7 +158,7 @@ const getStatusText = (status: string) => {
 };
 
 const getStatusClass = (status: string) => {
-  return `status-${status}`;
+  return `status status-${status}`;
 };
 
 const getRowClass = (log: any) => {
@@ -92,8 +169,10 @@ onMounted(() => {
   require('electron').ipcRenderer.on('monitor:data', (_, data) => {
     
       if (data.status === 'pending') {
-        data.startTime = performance.now() // 记录实际开始时间
+        data.startTime = Date.now() // 记录实际开始时间
         monitorLogs.value.push(data)
+        // 添加数据后滚动到底部
+        setTimeout(scrollToBottom, 10);
       }
       if (data.status === 'fullfilled') {
         const index = monitorLogs.value.findIndex(item => item.id === data.id)
@@ -120,231 +199,342 @@ onMounted(() => {
 });
 </script>
 
-<style scoped>
+<style scoped lang="scss">
+@use "sass:color";
+
+// 变量定义
+$primary-gradient: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+$primary-color: #667eea;
+$secondary-color: #764ba2;
+$white: #ffffff;
+$gray-600: #666;
+$gray-500: #555;
+
+// 状态颜色
+$pending-color: #fdcb6e;
+$pending-bg: #ffeaa7;
+$success-color: #00b894;
+$success-bg: #00cec9;
+$error-color: #e17055;
+$error-bg: #d63031;
+
 .monitor-container {
-  padding: 20px;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-  min-height: 100vh;
+  background: $primary-gradient;
+  height: 100vh;
   font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+  overflow: hidden;
 }
 
-.header {
+.main-content {
   display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 30px;
-  padding: 20px;
-  background: rgba(255, 255, 255, 0.1);
-  backdrop-filter: blur(10px);
-  border-radius: 15px;
-  border: 1px solid rgba(255, 255, 255, 0.2);
+  height: 100vh;
+  // transition: all 0.3s ease;
+
+  &.panel-open .table-container {
+    width: 60%;
+  }
 }
 
-.title {
-  color: white;
-  font-size: 2.5rem;
-  font-weight: 600;
-  margin: 0;
-  text-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
-}
-
-.stats {
-  display: flex;
-  gap: 20px;
-}
-
-.stat-item {
-  color: white;
-  font-size: 1.1rem;
-  padding: 8px 16px;
-  background: rgba(255, 255, 255, 0.2);
-  border-radius: 20px;
-  backdrop-filter: blur(5px);
-}
-
+// 表格容器
 .table-container {
-  background: rgba(255, 255, 255, 0.95);
-  border-radius: 15px;
+  background: rgba($white, 0.95);
+  // border-radius: 15px;
   overflow: hidden;
   box-shadow: 0 20px 40px rgba(0, 0, 0, 0.1);
   backdrop-filter: blur(10px);
+  width: 100%;
+  transition: width 0.3s ease;
+
+  // 滚动条样式
+  &::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+
+  &::-webkit-scrollbar-track {
+    background: rgba(0, 0, 0, 0.1);
+    border-radius: 4px;
+  }
+
+  &::-webkit-scrollbar-thumb {
+    background: $primary-gradient;
+    border-radius: 4px;
+
+    &:hover {
+      background: linear-gradient(135deg, color.scale($primary-color, $lightness: -10%), color.scale($secondary-color, $lightness: -10%));
+    }
+  }
 }
 
+.details-panel {
+  width: 40%;
+  background: rgba($white, 0.95);
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.1);
+  backdrop-filter: blur(10px);
+  display: flex;
+  flex-direction: column;
+  animation: slideIn 0.3s ease;
+  overflow: hidden;
+}
+
+@keyframes slideIn {
+  from {
+    transform: translateX(100%);
+    opacity: 0;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+
+.panel-header {
+  display: flex;
+  align-items: center;
+  height: 34px;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.1);
+  gap: 10px;
+
+  h3 {
+    margin: 0;
+    color: #333;
+    font-size: 14px;
+    font-weight: 600;
+    flex: 1;
+  }
+}
+
+.close-btn {
+  font-size: 20px;
+  color: #666;
+  cursor: pointer;
+  // padding: 0;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  display: inline-block;
+  text-align: center;
+  line-height: 16px;
+  transition: all 0.2s ease;
+
+  &:hover {
+    background: rgba(0, 0, 0, 0.1);
+    color: #333;
+  }
+}
+
+.panel-tabs {
+  display: flex;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.1);
+}
+
+.tab-btn {
+  flex: 1;
+  padding: 10px 20px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 500;
+  color: #666;
+  transition: all 0.2s ease;
+  border-bottom: 2px solid transparent;
+
+  &:hover {
+    background: rgba(0, 0, 0, 0.05);
+    color: #333;
+  }
+
+  &.active {
+    color: $primary-color;
+    border-bottom-color: $primary-color;
+    background: rgba($primary-color, 0.1);
+  }
+}
+
+.panel-content {
+  flex: 1;
+  overflow: auto;
+}
+
+.tab-content {
+  padding: 10px;
+  height: calc(100vh - 120px); // 减去标题和标签的高度
+
+  // JSON Pretty 样式覆盖
+  :deep(.vjs-tree) {
+    font-size: 13px;
+    line-height: 1.4;
+  }
+
+  :deep(.vjs-key) {
+    color: $primary-color;
+  }
+
+  :deep(.vjs-value-string) {
+    color: $success-color;
+  }
+
+  :deep(.vjs-value-number) {
+    color: $error-color;
+  }
+
+  :deep(.vjs-value-boolean) {
+    color: #d63031;
+  }
+
+  :deep(.vjs-value-null) {
+    color: #636e72;
+  }
+}
+
+// 表格样式
 .monitor-table {
   width: 100%;
   border-collapse: collapse;
-  font-size: 14px;
-}
-
-.monitor-table thead {
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-}
-
-.monitor-table th {
-  padding: 16px 12px;
-  color: white;
-  font-weight: 600;
-  text-align: center;
-  font-size: 13px;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-  border: none;
-}
-
-.monitor-table tbody tr {
-  transition: all 0.3s ease;
-  border-bottom: 1px solid rgba(0, 0, 0, 0.05);
-}
-
-.monitor-table tbody tr:hover {
-  background-color: rgba(102, 126, 234, 0.1);
-  transform: translateY(-1px);
-  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
-}
-
-.monitor-table td {
-  padding: 12px;
-  border: none;
-  vertical-align: middle;
-  text-align: center;
-  max-width: 200px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-/* 特定列样式 */
-.uuid-cell {
-  font-family: 'Courier New', monospace;
-  color: #666;
   font-size: 12px;
+
+  thead {
+    background: $primary-gradient;
+    display: block;
+
+    tr {
+      display: table;
+      table-layout: fixed;
+      width: 100%;
+    }
+  }
+
+  tbody {
+    display: block;
+    max-height: calc(100vh - 40px);
+    overflow: hidden auto;
+
+    tr {
+      display: table;
+      table-layout: fixed;
+      width: 100%;
+      transition: all 0.3s ease;
+      border-bottom: 1px solid rgba(0, 0, 0, 0.05);
+
+      &:hover {
+        background-color: rgba($primary-color, 0.1);
+        transform: translateY(-1px);
+        box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+      }
+    }
+  }
+
+  th {
+    padding: 10px 4px;
+    color: $white;
+    font-weight: 600;
+    text-align: center;
+    font-size: 13px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    border: none;
+  }
+
+  td {
+    padding: 12px;
+    border: none;
+    vertical-align: middle;
+    text-align: center;
+    max-width: 200px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
 }
 
+// 列样式
 .channel-cell {
   font-weight: 600;
   color: #333;
+
+  &.clickable {
+    cursor: pointer;
+    color: $primary-color !important;
+    transition: all 0.2s ease;
+
+    &:hover {
+      color: color.scale($primary-color, $lightness: -15%) !important;
+      text-decoration: underline;
+    }
+  }
 }
 
-.status-pending {
-  background: linear-gradient(135deg, #ffeaa7, #fdcb6e);
-  color: #e17055;
-  padding: 4px 12px;
-  border-radius: 15px;
-  font-size: 11px;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-}
-
-.status-fullfilled {
-  background: linear-gradient(135deg, #00b894, #00cec9);
-  color: white;
-  padding: 4px 12px;
-  border-radius: 15px;
-  font-size: 11px;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-}
-
-.status-rejected {
-  background: linear-gradient(135deg, #e17055, #d63031);
-  color: white;
-  padding: 4px 12px;
-  border-radius: 15px;
-  font-size: 11px;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-}
-
-.args-cell, .result-cell {
+.args-cell, 
+.size-cell {
   font-family: 'Courier New', monospace;
   font-size: 12px;
-  color: #555;
+  color: $gray-500;
   cursor: help;
 }
 
 .timestamp-cell {
   font-weight: 600;
-  color: #e17055;
+  color: $error-color;
 }
 
 .time-cell {
-  color: #666;
+  color: $gray-600;
   font-size: 12px;
 }
 
-/* 行状态样式 */
-.row-pending {
-  background: rgba(255, 234, 167, 0.3);
-  border-left: 4px solid #fdcb6e;
-}
-
-.row-fullfilled {
-  background: rgba(0, 184, 148, 0.1);
-  border-left: 4px solid #00b894;
-}
-
-.row-rejected {
-  background: rgba(225, 112, 85, 0.1);
-  border-left: 4px solid #e17055;
-}
-
-/* 响应式设计 */
+// 响应式设计
 @media (max-width: 1200px) {
-  .monitor-table {
-    font-size: 12px;
+  .main-content.panel-open .table-container {
+    width: 50%;
   }
-  
-  .monitor-table th,
-  .monitor-table td {
-    padding: 8px 6px;
-  }
-  
-  .title {
-    font-size: 2rem;
+
+  .details-panel {
+    width: 50%;
   }
 }
 
-@media (max-width: 768px) {
-  .monitor-container {
-    padding: 10px;
+// 状态样式
+.status {
+  padding: 4px 12px;
+  border-radius: 15px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+
+  &-pending {
+    background: linear-gradient(135deg, $pending-bg, $pending-color);
+    color: $error-color;
   }
-  
-  .header {
-    flex-direction: column;
-    gap: 15px;
-    text-align: center;
+
+  &-fullfilled {
+    background: linear-gradient(135deg, $success-color, $success-bg);
+    color: $white;
   }
-  
-  .monitor-table {
-    font-size: 11px;
-  }
-  
-  .monitor-table th,
-  .monitor-table td {
-    padding: 6px 4px;
+
+  &-rejected {
+    background: linear-gradient(135deg, $error-color, $error-bg);
+    color: $white;
   }
 }
 
-/* 滚动条美化 */
-.table-container::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
+// 行状态样式
+.row {
+  &-pending {
+    background: rgba($pending-bg, 0.3);
+    border-left: 4px solid $pending-color;
+  }
+
+  &-fullfilled {
+    background: rgba($success-color, 0.1);
+    border-left: 4px solid $success-color;
+  }
+
+  &-rejected {
+    background: rgba($error-color, 0.1);
+    border-left: 4px solid $error-color;
+  }
 }
 
-.table-container::-webkit-scrollbar-track {
-  background: rgba(0, 0, 0, 0.1);
-  border-radius: 4px;
-}
-
-.table-container::-webkit-scrollbar-thumb {
-  background: linear-gradient(135deg, #667eea, #764ba2);
-  border-radius: 4px;
-}
-
-.table-container::-webkit-scrollbar-thumb:hover {
-  background: linear-gradient(135deg, #5a6fd8, #6a4190);
-}
 </style>

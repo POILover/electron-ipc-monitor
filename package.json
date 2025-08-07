@@ -35,11 +35,14 @@
     "electron-vite": "^4.0.0",
     "eslint": "^9.31.0",
     "eslint-plugin-vue": "^10.3.0",
+    "normalize.css": "^8.0.1",
     "prettier": "^3.6.2",
+    "sass": "^1.90.0",
     "typescript": "^5.8.3",
     "vite": "^7.0.5",
     "vue": "^3.5.17",
     "vue-eslint-parser": "^10.2.0",
+    "vue-json-pretty": "^2.5.0",
     "vue-tsc": "^3.0.3"
   },
   "pnpm": {

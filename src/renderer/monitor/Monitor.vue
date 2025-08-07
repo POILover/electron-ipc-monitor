@@ -13,8 +13,8 @@
             </tr>
           </thead>
           <tbody ref="tbodyRef">
-            <tr v-for="(log, index) in monitorLogs" :key="index" :class="getRowClass(log)">
-              <td class="channel-cell clickable" @click="openPanel(log)">{{ log.channel }}</td>
+            <tr v-for="(log, index) in monitorLogs" :key="index" :class="getRowClass(log, index)">
+              <td class="channel-cell clickable" @click="openPanel(log, index)">{{ log.channel }}</td>
               <td class="status-cell">
                 <span :class="getStatusClass(log.status)">{{ getStatusText(log.status) }}</span>
               </td>
@@ -82,11 +82,13 @@ import 'vue-json-pretty/lib/styles.css';
 const monitorLogs = ref<any[]>([]);
 const isPanelOpen = ref(false);
 const selectedLog = ref<any>(null);
+const selectedRowIndex = ref<number>(-1);
 const activeTab = ref<'payload' | 'response'>('payload');
 
 // 打开面板
-const openPanel = (log: any) => {
+const openPanel = (log: any, index: number) => {
   selectedLog.value = log;
+  selectedRowIndex.value = index;
   isPanelOpen.value = true;
   // 保持当前的 tab 选择，不重置为 payload
 };
@@ -95,6 +97,7 @@ const openPanel = (log: any) => {
 const closePanel = () => {
   isPanelOpen.value = false;
   selectedLog.value = null;
+  selectedRowIndex.value = -1;
 };
 
 // 格式化函数
@@ -161,8 +164,10 @@ const getStatusClass = (status: string) => {
   return `status status-${status}`;
 };
 
-const getRowClass = (log: any) => {
-  return `row-${log.status}`;
+const getRowClass = (log: any, index: number) => {
+  const baseClass = `row-${log.status}`;
+  const selectedClass = selectedRowIndex.value === index ? 'row-selected' : '';
+  return `${baseClass} ${selectedClass}`.trim();
 };
 
 onMounted(() => {
@@ -416,12 +421,6 @@ $error-bg: #d63031;
       width: 100%;
       transition: all 0.3s ease;
       border-bottom: 1px solid rgba(0, 0, 0, 0.05);
-
-      &:hover {
-        background-color: rgba($primary-color, 0.1);
-        transform: translateY(-1px);
-        box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
-      }
     }
   }
 
@@ -534,6 +533,16 @@ $error-bg: #d63031;
   &-rejected {
     background: rgba($error-color, 0.1);
     border-left: 4px solid $error-color;
+  }
+
+  &-selected {
+    background: rgba($primary-color, 0.2) !important;
+    border-left: 4px solid $primary-color !important;
+    box-shadow: 0 2px 8px rgba($primary-color, 0.3);
+    
+    &:hover {
+      background: rgba($primary-color, 0.25) !important;
+    }
   }
 }
 
